@@ -26,6 +26,7 @@
 #include <functional>
 #include <iostream>
 #include <thread>
+#include <chrono>
 
 namespace po = boost::program_options;
 
@@ -295,18 +296,22 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_args.channels             = tx_channel_nums;
     uhd::tx_streamer::sptr tx_stream = tx_usrp->get_tx_stream(stream_args);
 
+    // create a receive streamer
+    uhd::rx_streamer::sptr rx_stream = rx_usrp->get_rx_stream(stream_args);
+
     // allocate a buffer which we re-use for each channel
+    // check samples per buffer, NOTE: default spb is max_spb
     if (spb == 0)
         spb = tx_stream->get_max_num_samps() * 10;
     std::vector<std::complex<float>> buff(spb); 
     int num_channels = tx_channel_nums.size();
 
     // setup the metadata flags
-    uhd::tx_metadata_t md;
-    md.start_of_burst = true;
-    md.end_of_burst   = false;
-    md.has_time_spec  = true;
-    md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
+    uhd::tx_metadata_t tx_md;
+    tx_md.start_of_burst = true;
+    tx_md.end_of_burst   = false;
+    tx_md.has_time_spec  = true;
+    tx_md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
 
     // Check Ref and LO Lock detect
     std::vector<std::string> tx_sensor_names, rx_sensor_names;
@@ -372,17 +377,74 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     tx_usrp->set_time_now(uhd::time_spec_t(0.0));
 
-    while (!stop_signal_called)
+    // init buffs
+    std::vector<std::vector<std::complex<float>>> buffs(
+        rx_channel_nums.size(), std::vector<std::complex<float>>(spb));
+
+    // create a vector of pointers to point to each of the channel buffers
+    std::vector<std::complex<float>*> buff_ptrs;
+    for (size_t i = 0; i < buffs.size(); i++) {
+        buff_ptrs.push_back(&buffs[i].front());
+    }
+
+    // rx_metadate
+    uhd::rx_metadata_t rx_md;
+
+    // init timeout
+    double timeout = settling + 0.5f;
+
+    bool overflow_message = true;
+
+    // setup rx_streaming
+    uhd::stream_cmd_t stream_cmd((total_num_samps == 0)
+                                     ? uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS
+                                     : uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
+    stream_cmd.num_samps  = total_num_samps;
+    stream_cmd.stream_now = false;
+    stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
+    rx_stream->issue_stream_cmd(stream_cmd);
+
+    while (not stop_signal_called)
     {
         /* rx signal */
+        size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
+        timeout             = 0.1f; // small timeout for subsequent recv
 
+        // error code checking
+        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
+            std::cout << "Timeout while streaming" << std::endl;
+            break;
+        }
+        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
+            if (overflow_message) {
+                overflow_message = false;
+                std::cerr
+                    << boost::format(
+                           "Got an overflow indication. Please consider the following:\n"
+                           "  Your write medium must sustain a rate of %fMB/s.\n"
+                           "  Dropped samples will not be written to the file.\n"
+                           "  Please modify this example for your purposes.\n"
+                           "  This message will not appear again.\n")
+                           % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
+            }
+            continue;
+        }
+        if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+            throw std::runtime_error("Receiver error " + rx_md.strerror());
+        }
 
         /* tx signal */
-
+        size_t num_tx_samps = tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
 
     }
     
+    // Shut down receiver
+    stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
+    rx_stream->issue_stream_cmd(stream_cmd);
 
+    // transimitter send a mini EOB packet
+    tx_md.end_of_burst = true;
+    tx_stream->send("", 0, tx_md);
 
     return EXIT_SUCCESS;
 }
