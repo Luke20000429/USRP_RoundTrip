@@ -1,0 +1,3 @@
+/home/liuxs/workarea/uhd_control/build/CMakeFiles/rebuild_cache.dir
+/home/liuxs/workarea/uhd_control/build/CMakeFiles/edit_cache.dir
+/home/liuxs/workarea/uhd_control/build/CMakeFiles/basic.dir
