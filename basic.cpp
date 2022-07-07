@@ -30,6 +30,9 @@
 
 namespace po = boost::program_options;
 
+#define NOW() (std::chrono::high_resolution_clock::now())
+using timestamp_t = std::chrono::high_resolution_clock::time_point;
+
 /***********************************************************************
  * Signal handlers
  **********************************************************************/
@@ -407,7 +410,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     while (not stop_signal_called)
     {
         /* rx signal */
+        timestamp_t t1 = NOW();
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
+        timestamp_t t2 = NOW();
         timeout             = 0.1f; // small timeout for subsequent recv
 
         // error code checking
@@ -434,7 +439,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         }
 
         /* tx signal */
+        timestamp_t t3 = NOW();
         size_t num_tx_samps = tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
+        timestamp_t t4 = NOW();
+
+        std::cout << "Time: \n"
+                  << "rx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
+                  << "error handle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
+                  << "tx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
+                  << "cycle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
 
     }
     
