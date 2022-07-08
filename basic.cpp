@@ -33,6 +33,66 @@ namespace po = boost::program_options;
 #define NOW() (std::chrono::high_resolution_clock::now())
 using timestamp_t = std::chrono::high_resolution_clock::time_point;
 
+float zc_real[] = {1.        , 0.99054969, 0.91601557, 0.67816903, 0.19368445,-0.47329161,
+ -0.96835464,-0.75779363, 0.23845923, 0.99579618, 0.28273252,-0.9414233 ,
+ -0.2606644 , 0.99894849,-0.30465196,-0.69484163, 0.99054969,-0.58963889,
+ -0.03439022, 0.53272534,-0.81437437, 0.93344339,-0.96835464, 0.96237739,
+ -0.9065768 , 0.74263314,-0.39061386,-0.1711384 , 0.77255565,-0.98714441,
+  0.41161885, 0.643763  ,-0.92497267,-0.21612866, 0.98322007, 0.28273252,
+ -0.86410814,-0.78691144, 0.14850236, 0.87542143, 0.96237739, 0.60800312,
+  0.14850236,-0.21612866,-0.43240741,-0.51318047,-0.47329161,-0.30465196,
+  0.01146542, 0.4529686 , 0.87542143, 0.97382271, 0.4529686 ,-0.51318047,
+ -0.99343412,-0.1711384 , 0.94890818, 0.32641121,-0.97877872, 0.05729694,
+  0.89666134,-0.84012465, 0.10300796, 0.60800312,-0.9558941 , 0.98322007,
+ -0.86410814, 0.74263314,-0.69484163, 0.74263314,-0.86410814, 0.98322007,
+ -0.9558941 , 0.60800312, 0.10300796,-0.84012465, 0.89666134, 0.05729694,
+ -0.97877872, 0.32641121, 0.94890818,-0.1711384 ,-0.99343412,-0.51318047,
+  0.4529686 , 0.97382271, 0.87542143, 0.4529686 , 0.01146542,-0.30465196,
+ -0.47329161,-0.51318047,-0.43240741,-0.21612866, 0.14850236, 0.60800312,
+  0.96237739, 0.87542143, 0.14850236,-0.78691144,-0.86410814, 0.28273252,
+  0.98322007,-0.21612866,-0.92497267, 0.643763  , 0.41161885,-0.98714441,
+  0.77255565,-0.1711384 ,-0.39061386, 0.74263314,-0.9065768 , 0.96237739,
+ -0.96835464, 0.93344339,-0.81437437, 0.53272534,-0.03439022,-0.58963889,
+  0.99054969,-0.69484163,-0.30465196, 0.99894849,-0.2606644 ,-0.9414233 ,
+  0.28273252, 0.99579618, 0.23845923,-0.75779363,-0.96835464,-0.47329161,
+  0.19368445, 0.67816903, 0.91601557, 0.99054969, 1.        };
+
+float zc_imag[] = {0.00000000e+00,-1.37154309e-01,-4.01142723e-01,-7.34905956e-01,
+ -9.81063878e-01,-8.80905813e-01,-2.49578219e-01, 6.52494307e-01,
+  9.71152510e-01, 9.15967646e-02,-9.59198793e-01,-3.37227189e-01,
+  9.65429474e-01, 4.58465904e-02,-9.52463743e-01, 7.19162783e-01,
+  1.37154309e-01,-8.07666999e-01, 9.99408482e-01,-8.46288194e-01,
+  5.80339894e-01,-3.58724727e-01, 2.49578219e-01,-2.71716318e-01,
+  4.22040875e-01,-6.69698454e-01, 9.20554624e-01,-9.85246999e-01,
+  6.34947064e-01, 1.59830884e-01,-9.11356088e-01, 7.65224934e-01,
+  3.80033640e-01,-9.76364892e-01,-1.82423417e-01, 9.59198793e-01,
+  5.03306193e-01,-6.17065950e-01,-9.88912054e-01,-4.83360453e-01,
+  2.71716318e-01, 7.93934633e-01, 9.88912054e-01, 9.76364892e-01,
+  9.01678340e-01, 8.58280727e-01, 8.80905813e-01, 9.52463743e-01,
+  9.99934270e-01, 8.91526469e-01, 4.83360453e-01,-2.27308885e-01,
+ -8.91526469e-01,-8.58280727e-01, 1.14405616e-01, 9.85246999e-01,
+  3.15552329e-01,-9.45227866e-01,-2.04920027e-01, 9.98357181e-01,
+ -4.42717108e-01,-5.42393375e-01, 9.94680532e-01,-7.93934633e-01,
+  2.93711544e-01, 1.82423417e-01,-5.03306193e-01, 6.69698454e-01,
+ -7.19162783e-01, 6.69698454e-01,-5.03306193e-01, 1.82423417e-01,
+  2.93711544e-01,-7.93934633e-01, 9.94680532e-01,-5.42393375e-01,
+ -4.42717108e-01, 9.98357181e-01,-2.04920027e-01,-9.45227866e-01,
+  3.15552329e-01, 9.85246999e-01, 1.14405616e-01,-8.58280727e-01,
+ -8.91526469e-01,-2.27308885e-01, 4.83360453e-01, 8.91526469e-01,
+  9.99934270e-01, 9.52463743e-01, 8.80905813e-01, 8.58280727e-01,
+  9.01678340e-01, 9.76364892e-01, 9.88912054e-01, 7.93934633e-01,
+  2.71716318e-01,-4.83360453e-01,-9.88912054e-01,-6.17065950e-01,
+  5.03306193e-01, 9.59198793e-01,-1.82423417e-01,-9.76364892e-01,
+  3.80033640e-01, 7.65224934e-01,-9.11356088e-01, 1.59830884e-01,
+  6.34947064e-01,-9.85246999e-01, 9.20554624e-01,-6.69698454e-01,
+  4.22040875e-01,-2.71716318e-01, 2.49578219e-01,-3.58724727e-01,
+  5.80339894e-01,-8.46288194e-01, 9.99408482e-01,-8.07666999e-01,
+  1.37154309e-01, 7.19162783e-01,-9.52463743e-01, 4.58465904e-02,
+  9.65429474e-01,-3.37227189e-01,-9.59198793e-01, 9.15967646e-02,
+  9.71152510e-01, 6.52494307e-01,-2.49578219e-01,-8.80905813e-01,
+ -9.81063878e-01,-7.34905956e-01,-4.01142723e-01,-1.37154309e-01,
+  7.83872988e-14};
+
 /***********************************************************************
  * Signal handlers
  **********************************************************************/
@@ -48,7 +108,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // transmit variables to be set by po
     std::string tx_args, wave_type, tx_ant, tx_subdev, ref, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
-    float ampl;
+    // float ampl;
 
     // receive variables to be set by po
     std::string rx_args, file, type, rx_ant, rx_subdev, rx_channels;
@@ -63,30 +123,30 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("help", "help message")
         ("tx-args", po::value<std::string>(&tx_args)->default_value(""), "uhd transmit device address args")
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
-        ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
-        ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
+        // ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
+        ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(0), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(20.0e6)), "rate of transmit outgoing samples")
-        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(20.0e6)), "rate of receive incoming samples")
-        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz")
-        ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
-        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(70.0)), "gain for the transmit RF chain")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain")
+        ("spb", po::value<size_t>(&spb)->default_value(64), "samples per buffer, 0 for default")
+        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 20MHz by default")
+        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 20MHz by default")
+        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
+        // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
+        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain, 40dB by default")
         ("tx-ant", po::value<std::string>(&tx_ant), "transmit antenna selection")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw), "analog receive filter bandwidth in Hz")
-        ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
-        ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
+        // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
+        // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
-        ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode")
-        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
-        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
+        ("otw", po::value<std::string>(&otw)->default_value("fc32"), "specify the over-the-wire sample mode")
+        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 0 by default")
+        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 1 by default")
         ("tx-int-n", "tune USRP TX with integer-N tuning")
         ("rx-int-n", "tune USRP RX with integer-N tuning")
     ;
@@ -102,7 +162,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     // create a usrp device
-    std::cout << std::endl;
     std::cout << boost::format("Creating the transmit usrp device with: %s...") % tx_args
               << std::endl;
     uhd::usrp::multi_usrp::sptr tx_usrp = uhd::usrp::multi_usrp::make(tx_args);
@@ -202,7 +261,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("tx-gain")) {
             std::cout << boost::format("Setting TX Gain: %f dB...") % tx_gain
                       << std::endl;
-            tx_usrp->set_tx_gain(tx_gain, channel);
+            // tx_usrp->set_tx_gain(tx_gain, channel);
+            tx_usrp->set_normalized_tx_gain(1.0, channel);
             std::cout << boost::format("Actual TX Gain: %f dB...")
                              % tx_usrp->get_tx_gain(channel)
                       << std::endl
@@ -252,7 +312,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            rx_usrp->set_rx_gain(rx_gain, channel);
+            // rx_usrp->set_rx_gain(rx_gain, channel);
+            rx_usrp->set_normalized_rx_gain(1.0, channel);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % rx_usrp->get_rx_gain(channel)
                       << std::endl
@@ -300,6 +361,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     uhd::tx_streamer::sptr tx_stream = tx_usrp->get_tx_stream(stream_args);
 
     // create a receive streamer
+    stream_args.channels             = rx_channel_nums;
     uhd::rx_streamer::sptr rx_stream = rx_usrp->get_rx_stream(stream_args);
 
     // allocate a buffer which we re-use for each channel
@@ -391,10 +453,13 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     // init tx_buffs
-    std::vector<std::complex<float>> tx_buff(spb);
-    for (auto &i : tx_buff) {
+    int seqlen = 137;
+    std::vector<std::complex<float>> tx_buff(seqlen);
+    for (size_t i = 0; i < tx_buff.size(); i++) {
         // compute ZC sequence
-        i = 0;
+        tx_buff[i].real(zc_real[i]);
+        tx_buff[i].imag(zc_imag[i]);
+        std::cout << tx_buff[i] << "\n";
     }
     std::vector<std::complex<float>*> tx_buffs(num_channels, &tx_buff.front());
     
@@ -418,6 +483,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // on -> true when receive beacon
     bool on = false;
 
+    std::cout << "Samples per buff: " << spb << std::endl;
+
     while (not stop_signal_called && !on)
     {
         /* rx signal */
@@ -425,6 +492,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
         timestamp_t t2 = NOW();
         timeout             = 0.1f; // small timeout for subsequent recv
+
+        // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
 
         // error code checking
         if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
@@ -458,9 +527,19 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     while (not stop_signal_called) {
 
         /* tx signal */
-        timestamp_t t3 = NOW();
-        size_t num_tx_samps = tx_stream->send(tx_buffs, spb, tx_md);
-        timestamp_t t4 = NOW();
+        // timestamp_t t3 = NOW();
+        size_t num_tx_samps = tx_stream->send(tx_buffs, seqlen, tx_md);
+        // timestamp_t t4 = NOW();
+
+        tx_md.start_of_burst = false;
+        tx_md.has_time_spec  = false;
+
+        // std::cout << "Time: \n"
+        //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
+        //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
+        //           << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
+        //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
+
     }
     
     // Shut down receiver
