@@ -380,16 +380,24 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     tx_usrp->set_time_now(uhd::time_spec_t(0.0));
 
-    // init buffs
-    std::vector<std::vector<std::complex<float>>> buffs(
+    // init rx_buffs
+    std::vector<std::vector<std::complex<float>>> rx_buffs(
         rx_channel_nums.size(), std::vector<std::complex<float>>(spb));
-
+    
     // create a vector of pointers to point to each of the channel buffers
     std::vector<std::complex<float>*> buff_ptrs;
-    for (size_t i = 0; i < buffs.size(); i++) {
-        buff_ptrs.push_back(&buffs[i].front());
+    for (size_t i = 0; i < rx_buffs.size(); i++) {
+        buff_ptrs.push_back(&rx_buffs[i].front());
     }
 
+    // init tx_buffs
+    std::vector<std::complex<float>> tx_buff(spb);
+    for (auto &i : tx_buff) {
+        // compute ZC sequence
+        i = 0;
+    }
+    std::vector<std::complex<float>*> tx_buffs(num_channels, &tx_buff.front());
+    
     // rx_metadate
     uhd::rx_metadata_t rx_md;
 
@@ -407,7 +415,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
     rx_stream->issue_stream_cmd(stream_cmd);
 
-    while (not stop_signal_called)
+    // on -> true when receive beacon
+    bool on = false;
+
+    while (not stop_signal_called && !on)
     {
         /* rx signal */
         timestamp_t t1 = NOW();
@@ -438,17 +449,18 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
+        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
+            on = true;
+            break;
+        }
+    }
+
+    while (not stop_signal_called) {
+
         /* tx signal */
         timestamp_t t3 = NOW();
-        size_t num_tx_samps = tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
+        size_t num_tx_samps = tx_stream->send(tx_buffs, spb, tx_md);
         timestamp_t t4 = NOW();
-
-        std::cout << "Time: \n"
-                  << "rx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-                  << "error handle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-                  << "tx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-                  << "cycle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
-
     }
     
     // Shut down receiver
