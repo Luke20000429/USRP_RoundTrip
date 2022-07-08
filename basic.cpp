@@ -58,7 +58,7 @@ void transmit_worker(std::vector<std::complex<float>*> &buffs,
     // send data until the signal handler gets called
     while (not stop_signal_called) {
         // check control signal
-        while (not on) {}
+        while (not on && not stop_signal_called) {}
 
         // send the entire contents of the buffer
         tx_streamer->send(buffs, samples_per_buff, metadata);
@@ -105,7 +105,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
         // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
         ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain, 40dB by default")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(76.0)), "gain for the receive RF chain, 40dB by default")
         ("tx-ant", po::value<std::string>(&tx_ant), "transmit antenna selection")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
@@ -283,7 +283,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            rx_usrp->set_rx_gain(rx_gain, channel);
+            rx_usrp->set_normalized_rx_gain(1.0);
+            // rx_usrp->set_rx_gain(rx_gain, channel);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % rx_usrp->get_rx_gain(channel)
                       << std::endl
@@ -477,7 +478,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
-        toggle flag
+        std::cout << "Mag of recv signal " << std::abs(buffs[0][num_rx_samps-1]) << std::endl;
+
+        // toggle flag
         if (std::abs(buffs[0][num_rx_samps-1]) > 0.8) {
             bool status = on.load();
             on.store(!status);
@@ -495,9 +498,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
 
-    // transimitter send a mini EOB packet
-    tx_md.end_of_burst = true;
-    tx_stream->send("", 0, tx_md);
+    // clean up transmit worker
+    stop_signal_called = true;
+    transmit_thread.join();
 
     return EXIT_SUCCESS;
 }
