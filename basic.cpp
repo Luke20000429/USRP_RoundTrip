@@ -283,7 +283,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            rx_usrp->set_normalized_rx_gain(1.0);
+            rx_usrp->set_normalized_rx_gain(1.0, channel);
             // rx_usrp->set_rx_gain(rx_gain, channel);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % rx_usrp->get_rx_gain(channel)
@@ -419,6 +419,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     // create a vector of pointers to point to each of the channel buffers
     std::vector<std::complex<float>*> buff_ptrs;
+    std::cout << "Actual buffers size: " << buffs.size() <<std::endl;
     for (size_t i = 0; i < buffs.size(); i++) {
         buff_ptrs.push_back(&buffs[i].front());
     }
@@ -478,12 +479,17 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
-        std::cout << "Mag of recv signal " << std::abs(buffs[0][num_rx_samps-1]) << std::endl;
+        // for (auto sample : buffs[0]) {
+        //     if (std::abs(sample) > 0.8) {
+        //         std::cout << "Mag of recv signal " << std::abs(sample) << std::endl;
+        //     }
+        // }
 
         // toggle flag
-        if (std::abs(buffs[0][num_rx_samps-1]) > 0.8) {
+        if (std::abs(buffs[0][num_rx_samps-1]) >= 0.9) {
             bool status = on.load();
             on.store(!status);
+            std::cout << "Status toggled -> " << !status << std::endl;
         }
 
         // std::cout << "Time: \n"
