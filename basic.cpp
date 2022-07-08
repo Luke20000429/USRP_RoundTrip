@@ -27,6 +27,7 @@
 #include <iostream>
 #include <thread>
 #include <chrono>
+#include <atomic>
 
 namespace po = boost::program_options;
 
@@ -41,6 +42,36 @@ void sig_int_handler(int)
 {
     stop_signal_called = true;
 }
+
+/***********************************************************************
+ * transmit_worker function
+ * A function to be used in a thread for transmitting
+ **********************************************************************/
+std::atomic_bool on;
+
+void transmit_worker(std::vector<std::complex<float>*> &buffs,
+    uhd::tx_streamer::sptr tx_streamer,
+    uhd::tx_metadata_t metadata,
+    size_t samples_per_buff,
+    int num_channels)
+{
+    // send data until the signal handler gets called
+    while (not stop_signal_called) {
+        // check control signal
+        while (not on) {}
+
+        // send the entire contents of the buffer
+        tx_streamer->send(buffs, samples_per_buff, metadata);
+
+        metadata.start_of_burst = false;
+        metadata.has_time_spec  = false;
+    }
+
+    // send a mini EOB packet
+    metadata.end_of_burst = true;
+    tx_streamer->send("", 0, metadata);
+}
+
 
 
 int UHD_SAFE_MAIN(int argc, char* argv[])
@@ -407,6 +438,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
     rx_stream->issue_stream_cmd(stream_cmd);
 
+    std::thread transmit_thread([&]() {
+        transmit_worker(buff_ptrs, tx_stream, tx_md, spb, num_channels);
+    });
+
     while (not stop_signal_called)
     {
         /* rx signal */
@@ -438,16 +473,17 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
-        /* tx signal */
-        timestamp_t t3 = NOW();
-        size_t num_tx_samps = tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
-        timestamp_t t4 = NOW();
+        // toggle flag
+        if (std::abs(buffs[0][num_rx_samps-1]) > 0.8) {
+            bool status = on.load();
+            on.store(!status);
+        }
 
-        std::cout << "Time: \n"
-                  << "rx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-                  << "error handle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-                  << "tx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-                  << "cycle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
+        // std::cout << "Time: \n"
+        //           << "rx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
+        //           << "error handle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
+        //           << "tx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
+        //           << "cycle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
 
     }
     
