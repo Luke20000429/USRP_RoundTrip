@@ -79,7 +79,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // transmit variables to be set by po
     std::string tx_args, wave_type, tx_ant, tx_subdev, ref, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
-    float ampl;
+    // float ampl;
 
     // receive variables to be set by po
     std::string rx_args, file, type, rx_ant, rx_subdev, rx_channels;
@@ -94,30 +94,30 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("help", "help message")
         ("tx-args", po::value<std::string>(&tx_args)->default_value(""), "uhd transmit device address args")
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
-        ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
-        ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
+        // ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
+        ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(0), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(20.0e6)), "rate of transmit outgoing samples")
-        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(20.0e6)), "rate of receive incoming samples")
-        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz")
-        ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
-        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(70.0)), "gain for the transmit RF chain")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain")
+        ("spb", po::value<size_t>(&spb)->default_value(64), "samples per buffer, 0 for default")
+        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 20MHz by default")
+        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 20MHz by default")
+        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
+        // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
+        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain, 40dB by default")
         ("tx-ant", po::value<std::string>(&tx_ant), "transmit antenna selection")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw), "analog receive filter bandwidth in Hz")
-        ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
-        ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
+        // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
+        // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
-        ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode")
-        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
-        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
+        ("otw", po::value<std::string>(&otw)->default_value("fc32"), "specify the over-the-wire sample mode")
+        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 0 by default")
+        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 1 by default")
         ("tx-int-n", "tune USRP TX with integer-N tuning")
         ("rx-int-n", "tune USRP RX with integer-N tuning")
     ;
@@ -331,6 +331,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     uhd::tx_streamer::sptr tx_stream = tx_usrp->get_tx_stream(stream_args);
 
     // create a receive streamer
+    stream_args.channels             = rx_channel_nums;
     uhd::rx_streamer::sptr rx_stream = rx_usrp->get_rx_stream(stream_args);
 
     // allocate a buffer which we re-use for each channel
@@ -441,6 +442,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::thread transmit_thread([&]() {
         transmit_worker(buff_ptrs, tx_stream, tx_md, spb, num_channels);
     });
+    std::cout << "Samples per buff: " << spb << std::endl;
 
     while (not stop_signal_called)
     {
@@ -449,6 +451,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
         timestamp_t t2 = NOW();
         timeout             = 0.1f; // small timeout for subsequent recv
+
+        // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
 
         // error code checking
         if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
@@ -473,17 +477,17 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
-        // toggle flag
+        toggle flag
         if (std::abs(buffs[0][num_rx_samps-1]) > 0.8) {
             bool status = on.load();
             on.store(!status);
         }
 
         // std::cout << "Time: \n"
-        //           << "rx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-        //           << "error handle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-        //           << "tx time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-        //           << "cycle time" << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
+        //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
+        //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
+        //           << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
+        //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
 
     }
     
