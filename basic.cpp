@@ -127,7 +127,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(64), "samples per buffer, 0 for default")
+        ("spb", po::value<size_t>(&spb)->default_value(32), "samples per buffer, 0 for default")
         ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 20MHz by default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 20MHz by default")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
@@ -481,59 +481,62 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_stream->issue_stream_cmd(stream_cmd);
 
     // on -> true when receive beacon
-    bool on = false;
+    timestamp_t t1, t2, t3;
 
     std::cout << "Samples per buff: " << spb << std::endl;
 
-    while (not stop_signal_called && !on)
+    while (not stop_signal_called)
     {
         /* rx signal */
-        timestamp_t t1 = NOW();
+        // timestamp_t t1 = NOW();
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
-        timestamp_t t2 = NOW();
-        timeout             = 0.1f; // small timeout for subsequent recv
+        t1 = NOW();
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
-
-        // error code checking
-        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
-            std::cout << "Timeout while streaming" << std::endl;
-            break;
-        }
-        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
-            if (overflow_message) {
-                overflow_message = false;
-                std::cerr
-                    << boost::format(
-                           "Got an overflow indication. Please consider the following:\n"
-                           "  Your write medium must sustain a rate of %fMB/s.\n"
-                           "  Dropped samples will not be written to the file.\n"
-                           "  Please modify this example for your purposes.\n"
-                           "  This message will not appear again.\n")
-                           % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
-            }
-            continue;
-        }
-        if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
-            throw std::runtime_error("Receiver error " + rx_md.strerror());
-        }
-
         if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
-            on = true;
             break;
         }
+
+        timeout             = 0.1f; // small timeout for subsequent recv
+
+        // // error code checking
+        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
+        //     std::cout << "Timeout while streaming" << std::endl;
+        //     break;
+        // }
+        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
+        //     if (overflow_message) {
+        //         overflow_message = false;
+        //         std::cerr
+        //             << boost::format(
+        //                    "Got an overflow indication. Please consider the following:\n"
+        //                    "  Your write medium must sustain a rate of %fMB/s.\n"
+        //                    "  Dropped samples will not be written to the file.\n"
+        //                    "  Please modify this example for your purposes.\n"
+        //                    "  This message will not appear again.\n")
+        //                    % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
+        //     }
+        //     continue;
+        // }
+        // if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+        //     throw std::runtime_error("Receiver error " + rx_md.strerror());
+        // }
+
     }
+
+    t2 = NOW();
 
     while (not stop_signal_called) {
 
         /* tx signal */
         // timestamp_t t3 = NOW();
+        if (tx_md.start_of_burst) {
+            t3 = NOW();
+            tx_md.start_of_burst = false;
+            tx_md.has_time_spec  = false;
+        }
         size_t num_tx_samps = tx_stream->send(tx_buffs, seqlen, tx_md);
         // timestamp_t t4 = NOW();
-
-        tx_md.start_of_burst = false;
-        tx_md.has_time_spec  = false;
-
         // std::cout << "Time: \n"
         //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
         //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
@@ -541,7 +544,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
 
     }
-    
+    std::cout << "Reaction interval: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n" 
+            << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n";
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
