@@ -64,12 +64,12 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("tx-args", po::value<std::string>(&tx_args)->default_value(""), "uhd transmit device address args")
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
         // ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
-        ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
+        ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
         ("spb", po::value<size_t>(&spb)->default_value(64), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 20MHz by default")
-        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 20MHz by default")
+        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(20.0e6)), "rate of transmit outgoing samples, 20MHz by default")
+        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(20.0e6)), "rate of receive incoming samples, 20MHz by default")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
         ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
         // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
@@ -79,12 +79,12 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(10.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(10.0e6)), "analog receive filter bandwidth in Hz")
         // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
         // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
-        ("otw", po::value<std::string>(&otw)->default_value("fc32"), "specify the over-the-wire sample mode")
+        ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode")
         ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 0 by default")
         ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 1 by default")
         ("tx-int-n", "tune USRP TX with integer-N tuning")
@@ -420,28 +420,28 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
 
-        // error code checking
-        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
-            std::cout << "Timeout while streaming" << std::endl;
-            break;
-        }
-        if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
-            if (overflow_message) {
-                overflow_message = false;
-                std::cerr
-                    << boost::format(
-                           "Got an overflow indication. Please consider the following:\n"
-                           "  Your write medium must sustain a rate of %fMB/s.\n"
-                           "  Dropped samples will not be written to the file.\n"
-                           "  Please modify this example for your purposes.\n"
-                           "  This message will not appear again.\n")
-                           % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
-            }
-            continue;
-        }
-        if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
-            throw std::runtime_error("Receiver error " + rx_md.strerror());
-        }
+        // // error code checking
+        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
+        //     std::cout << "Timeout while streaming" << std::endl;
+        //     break;
+        // }
+        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
+        //     if (overflow_message) {
+        //         overflow_message = false;
+        //         std::cerr
+        //             << boost::format(
+        //                    "Got an overflow indication. Please consider the following:\n"
+        //                    "  Your write medium must sustain a rate of %fMB/s.\n"
+        //                    "  Dropped samples will not be written to the file.\n"
+        //                    "  Please modify this example for your purposes.\n"
+        //                    "  This message will not appear again.\n")
+        //                    % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
+        //     }
+        //     continue;
+        // }
+        // if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+        //     throw std::runtime_error("Receiver error " + rx_md.strerror());
+        // }
 
         /* tx signal */
         timestamp_t t3 = NOW();
