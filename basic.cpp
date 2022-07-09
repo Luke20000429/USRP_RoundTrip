@@ -1,14 +1,14 @@
 //
-// Copyright 2014 Ettus Research LLC
+// Copyright 2010-2012,2014-2015 Ettus Research LLC
 // Copyright 2018 Ettus Research, a National Instruments Company
 //
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 
-// This tiny program is meant as an example on how to set up UHD
-// projects using CMake.
-// The program itself only initializes a USRP. For more elaborate examples,
-// have a look at the files in host/examples/.
+/* call 
+./txrx_loopback_to_file --tx-bw 20e6 --rx-bw 20e6 --tx-gain 90 --rx-gain 40 --tx-rate 40e6 --rx-rate 40e6 --tx-freq 2.45e9 --rx-freq 5.0e9 --tx-channels 0 --rx-channels 1 --wave-type SINE --wave-freq 1e6 --ampl 1 --spb 102400
+
+*/
 
 #include <uhd/exception.hpp>
 #include <uhd/types/tune_request.hpp>
@@ -26,13 +26,10 @@
 #include <functional>
 #include <iostream>
 #include <thread>
-#include <chrono>
 
 namespace po = boost::program_options;
 
-#define NOW() (std::chrono::high_resolution_clock::now())
-using timestamp_t = std::chrono::high_resolution_clock::time_point;
-
+size_t seqlen = 137;
 float zc_real[] = {1.        , 0.99054969, 0.91601557, 0.67816903, 0.19368445,-0.47329161,
  -0.96835464,-0.75779363, 0.23845923, 0.99579618, 0.28273252,-0.9414233 ,
  -0.2606644 , 0.99894849,-0.30465196,-0.69484163, 0.99054969,-0.58963889,
@@ -102,13 +99,167 @@ void sig_int_handler(int)
     stop_signal_called = true;
 }
 
+/***********************************************************************
+ * Utilities
+ **********************************************************************/
+//! Change to filename, e.g. from usrp_samples.dat to usrp_samples.00.dat,
+//  but only if multiple names are to be generated.
+std::string generate_out_filename(
+    const std::string& base_fn, size_t n_names, size_t this_name)
+{
+    if (n_names == 1) {
+        return base_fn;
+    }
 
+    boost::filesystem::path base_fn_fp(base_fn);
+    // base_fn_fp.replace_extension(boost::filesystem::path(
+    //     str(boost::format("%02d%s") % this_name % base_fn_fp.extension().string())));
+    return base_fn_fp.string();
+}
+
+
+/***********************************************************************
+ * transmit_worker function
+ * A function to be used in a thread for transmitting
+ **********************************************************************/
+void transmit_worker(std::vector<std::complex<float>> buff,
+    uhd::tx_streamer::sptr tx_streamer,
+    uhd::tx_metadata_t metadata,
+    int num_channels)
+{
+    std::vector<std::complex<float>*> buffs(num_channels, &buff.front());
+
+    // fill the buffer with the waveform
+    for (size_t n = 0; n < buff.size(); n++) {
+            buff[n].real(zc_real[n%seqlen]);
+            buff[n].imag(zc_imag[n%seqlen]);
+        }
+
+    // send data until the signal handler gets called
+    while (not stop_signal_called) {
+        // send the entire contents of the buffer
+        tx_streamer->send(buffs, buff.size(), metadata);
+
+        metadata.start_of_burst = false;
+        metadata.has_time_spec  = false;
+    }
+
+    // send a mini EOB packet
+    metadata.end_of_burst = true;
+    tx_streamer->send("", 0, metadata);
+}
+
+
+/***********************************************************************
+ * recv_to_file function
+ **********************************************************************/
+template <typename samp_type>
+void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
+    const std::string& cpu_format,
+    const std::string& wire_format,
+    const std::string& file,
+    size_t samps_per_buff,
+    int num_requested_samples,
+    double settling_time,
+    std::vector<size_t> rx_channel_nums)
+{
+    int num_total_samps = 0;
+    // create a receive streamer
+    uhd::stream_args_t stream_args(cpu_format, wire_format);
+    stream_args.channels             = rx_channel_nums;
+    uhd::rx_streamer::sptr rx_stream = usrp->get_rx_stream(stream_args);
+
+    // Prepare buffers for received samples and metadata
+    uhd::rx_metadata_t md;
+    std::vector<std::vector<samp_type>> buffs(
+        rx_channel_nums.size(), std::vector<samp_type>(samps_per_buff));
+    // create a vector of pointers to point to each of the channel buffers
+    std::vector<samp_type*> buff_ptrs;
+    for (size_t i = 0; i < buffs.size(); i++) {
+        buff_ptrs.push_back(&buffs[i].front());
+    }
+
+    // Create one ofstream object per channel
+    // (use shared_ptr because ofstream is non-copyable)
+    std::vector<std::shared_ptr<std::ofstream>> outfiles;
+    for (size_t i = 0; i < buffs.size(); i++) {
+        const std::string this_filename = generate_out_filename(file, buffs.size(), i);
+        std::cout << "Witting to the file " << this_filename << std::endl;
+        outfiles.push_back(std::shared_ptr<std::ofstream>(
+            new std::ofstream(this_filename.c_str(), std::ofstream::binary)));
+    }
+    UHD_ASSERT_THROW(outfiles.size() == buffs.size());
+    UHD_ASSERT_THROW(buffs.size() == rx_channel_nums.size());
+    bool overflow_message = true;
+    // We increase the first timeout to cover for the delay between now + the
+    // command time, plus 500ms of buffer. In the loop, we will then reduce the
+    // timeout for subsequent receives.
+    double timeout = settling_time + 0.5f;
+
+    // setup streaming
+    uhd::stream_cmd_t stream_cmd((num_requested_samples == 0)
+                                     ? uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS
+                                     : uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
+    stream_cmd.num_samps  = num_requested_samples;
+    stream_cmd.stream_now = false;
+    stream_cmd.time_spec  = usrp->get_time_now() + uhd::time_spec_t(settling_time);
+    rx_stream->issue_stream_cmd(stream_cmd);
+
+    while (not stop_signal_called
+           and (num_requested_samples > num_total_samps or num_requested_samples == 0)) {
+        size_t num_rx_samps = rx_stream->recv(buff_ptrs, samps_per_buff, md, timeout);
+        timeout             = 0.1f; // small timeout for subsequent recv
+
+        if (md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
+            std::cout << "Timeout while streaming" << std::endl;
+            break;
+        }
+        if (md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
+            if (overflow_message) {
+                overflow_message = false;
+                std::cerr
+                    << boost::format(
+                           "Got an overflow indication. Please consider the following:\n"
+                           "  Your write medium must sustain a rate of %fMB/s.\n"
+                           "  Dropped samples will not be written to the file.\n"
+                           "  Please modify this example for your purposes.\n"
+                           "  This message will not appear again.\n")
+                           % (usrp->get_rx_rate() * sizeof(samp_type) / 1e6);
+            }
+            continue;
+        }
+        if (md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
+            throw std::runtime_error("Receiver error " + md.strerror());
+        }
+
+        num_total_samps += num_rx_samps;
+
+        for (size_t i = 0; i < outfiles.size(); i++) {
+            outfiles[i]->write(
+                (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
+        }
+    }
+
+    // Shut down receiver
+    stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
+    rx_stream->issue_stream_cmd(stream_cmd);
+
+    // Close files
+    for (size_t i = 0; i < outfiles.size(); i++) {
+        outfiles[i]->close();
+    }
+}
+
+
+/***********************************************************************
+ * Main function
+ **********************************************************************/
 int UHD_SAFE_MAIN(int argc, char* argv[])
 {
     // transmit variables to be set by po
     std::string tx_args, wave_type, tx_ant, tx_subdev, ref, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
-    // float ampl;
+    float ampl;
 
     // receive variables to be set by po
     std::string rx_args, file, type, rx_ant, rx_subdev, rx_channels;
@@ -123,30 +274,30 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("help", "help message")
         ("tx-args", po::value<std::string>(&tx_args)->default_value(""), "uhd transmit device address args")
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
-        // ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
-        ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
+        ("file", po::value<std::string>(&file)->default_value("usrp_samples.dat"), "name of the file to write binary samples to")
+        ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(32), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 20MHz by default")
-        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 20MHz by default")
-        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
-        // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
-        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain, 40dB by default")
+        ("spb", po::value<size_t>(&spb)->default_value(0), "samples per buffer, 0 for default")
+        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples")
+        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples")
+        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz")
+        ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
+        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(90.0)), "gain for the receive RF chain")
         ("tx-ant", po::value<std::string>(&tx_ant), "transmit antenna selection")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
         ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
-        // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
-        // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
+        ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
+        ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
-        ("otw", po::value<std::string>(&otw)->default_value("fc32"), "specify the over-the-wire sample mode")
-        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 0 by default")
-        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 1 by default")
+        ("otw", po::value<std::string>(&otw)->default_value("sc16"), "specify the over-the-wire sample mode")
+        ("tx-channels", po::value<std::string>(&tx_channels)->default_value("0"), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
+        ("rx-channels", po::value<std::string>(&rx_channels)->default_value("1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc)")
         ("tx-int-n", "tune USRP TX with integer-N tuning")
         ("rx-int-n", "tune USRP RX with integer-N tuning")
     ;
@@ -162,6 +313,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     // create a usrp device
+    std::cout << std::endl;
     std::cout << boost::format("Creating the transmit usrp device with: %s...") % tx_args
               << std::endl;
     uhd::usrp::multi_usrp::sptr tx_usrp = uhd::usrp::multi_usrp::make(tx_args);
@@ -261,8 +413,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("tx-gain")) {
             std::cout << boost::format("Setting TX Gain: %f dB...") % tx_gain
                       << std::endl;
-            // tx_usrp->set_tx_gain(tx_gain, channel);
-            tx_usrp->set_normalized_tx_gain(1.0, channel);
+            tx_usrp->set_tx_gain(tx_gain, channel);
             std::cout << boost::format("Actual TX Gain: %f dB...")
                              % tx_usrp->get_tx_gain(channel)
                       << std::endl
@@ -312,8 +463,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            // rx_usrp->set_rx_gain(rx_gain, channel);
-            rx_usrp->set_normalized_rx_gain(1.0, channel);
+            rx_usrp->set_rx_gain(rx_gain, channel);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % rx_usrp->get_rx_gain(channel)
                       << std::endl
@@ -346,12 +496,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         wave_freq = tx_usrp->get_tx_rate() / 2;
     }
 
-    // error when the waveform is not possible to generate
-    if (std::abs(wave_freq) > tx_usrp->get_tx_rate() / 2) {
-        throw std::runtime_error("wave freq out of Nyquist zone");
-    }
-
-    // pre-compute the waveform values
     size_t index      = 0;
 
     // create a transmit streamer
@@ -360,23 +504,19 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_args.channels             = tx_channel_nums;
     uhd::tx_streamer::sptr tx_stream = tx_usrp->get_tx_stream(stream_args);
 
-    // create a receive streamer
-    stream_args.channels             = rx_channel_nums;
-    uhd::rx_streamer::sptr rx_stream = rx_usrp->get_rx_stream(stream_args);
-
     // allocate a buffer which we re-use for each channel
-    // check samples per buffer, NOTE: default spb is max_spb
     if (spb == 0)
-        spb = tx_stream->get_max_num_samps() * 10;
-    std::vector<std::complex<float>> buff(spb); 
+        // spb = tx_stream->get_max_num_samps() * 10;
+        spb = seqlen*100;
+    std::vector<std::complex<float>> buff(spb);
     int num_channels = tx_channel_nums.size();
 
     // setup the metadata flags
-    uhd::tx_metadata_t tx_md;
-    tx_md.start_of_burst = true;
-    tx_md.end_of_burst   = false;
-    tx_md.has_time_spec  = true;
-    tx_md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
+    uhd::tx_metadata_t md;
+    md.start_of_burst = true;
+    md.end_of_burst   = false;
+    md.has_time_spec  = true;
+    md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
 
     // Check Ref and LO Lock detect
     std::vector<std::string> tx_sensor_names, rx_sensor_names;
@@ -442,117 +582,35 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
     tx_usrp->set_time_now(uhd::time_spec_t(0.0));
 
-    // init rx_buffs
-    std::vector<std::vector<std::complex<float>>> rx_buffs(
-        rx_channel_nums.size(), std::vector<std::complex<float>>(spb));
-    
-    // create a vector of pointers to point to each of the channel buffers
-    std::vector<std::complex<float>*> buff_ptrs;
-    for (size_t i = 0; i < rx_buffs.size(); i++) {
-        buff_ptrs.push_back(&rx_buffs[i].front());
+    std::cout << "Spb: " << spb << std::endl;
+
+    // start transmit worker thread
+    std::thread transmit_thread([&]() {
+        transmit_worker(buff, tx_stream, md, num_channels);
+    });
+
+    // recv to file
+    if (type == "double")
+        recv_to_file<std::complex<double>>(
+            rx_usrp, "fc64", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "float")
+        recv_to_file<std::complex<float>>(
+            rx_usrp, "fc32", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else if (type == "short")
+        recv_to_file<std::complex<short>>(
+            rx_usrp, "sc16", otw, file, spb, total_num_samps, settling, rx_channel_nums);
+    else {
+        // clean up transmit worker
+        stop_signal_called = true;
+        transmit_thread.join();
+        throw std::runtime_error("Unknown type " + type);
     }
 
-    // init tx_buffs
-    int seqlen = 137;
-    std::vector<std::complex<float>> tx_buff(seqlen);
-    for (size_t i = 0; i < tx_buff.size(); i++) {
-        // compute ZC sequence
-        tx_buff[i].real(zc_real[i]);
-        tx_buff[i].imag(zc_imag[i]);
-        std::cout << tx_buff[i] << "\n";
-    }
-    std::vector<std::complex<float>*> tx_buffs(num_channels, &tx_buff.front());
-    
-    // rx_metadate
-    uhd::rx_metadata_t rx_md;
+    // clean up transmit worker
+    stop_signal_called = true;
+    transmit_thread.join();
 
-    // init timeout
-    double timeout = settling + 0.5f;
-
-    bool overflow_message = true;
-
-    // setup rx_streaming
-    uhd::stream_cmd_t stream_cmd((total_num_samps == 0)
-                                     ? uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS
-                                     : uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
-    stream_cmd.num_samps  = total_num_samps;
-    stream_cmd.stream_now = false;
-    stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
-    rx_stream->issue_stream_cmd(stream_cmd);
-
-    // on -> true when receive beacon
-    timestamp_t t1, t2, t3;
-
-    std::cout << "Samples per buff: " << spb << std::endl;
-
-    while (not stop_signal_called)
-    {
-        /* rx signal */
-        // timestamp_t t1 = NOW();
-        size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
-        t1 = NOW();
-
-        // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
-        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
-            break;
-        }
-
-        timeout             = 0.1f; // small timeout for subsequent recv
-
-        // // error code checking
-        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
-        //     std::cout << "Timeout while streaming" << std::endl;
-        //     break;
-        // }
-        // if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
-        //     if (overflow_message) {
-        //         overflow_message = false;
-        //         std::cerr
-        //             << boost::format(
-        //                    "Got an overflow indication. Please consider the following:\n"
-        //                    "  Your write medium must sustain a rate of %fMB/s.\n"
-        //                    "  Dropped samples will not be written to the file.\n"
-        //                    "  Please modify this example for your purposes.\n"
-        //                    "  This message will not appear again.\n")
-        //                    % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
-        //     }
-        //     continue;
-        // }
-        // if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
-        //     throw std::runtime_error("Receiver error " + rx_md.strerror());
-        // }
-
-    }
-
-    t2 = NOW();
-
-    while (not stop_signal_called) {
-
-        /* tx signal */
-        // timestamp_t t3 = NOW();
-        if (tx_md.start_of_burst) {
-            t3 = NOW();
-            tx_md.start_of_burst = false;
-            tx_md.has_time_spec  = false;
-        }
-        size_t num_tx_samps = tx_stream->send(tx_buffs, seqlen, tx_md);
-        // timestamp_t t4 = NOW();
-        // std::cout << "Time: \n"
-        //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-        //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-        //           << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-        //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
-
-    }
-    std::cout << "Reaction interval: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n" 
-            << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n";
-    // Shut down receiver
-    stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
-    rx_stream->issue_stream_cmd(stream_cmd);
-
-    // transimitter send a mini EOB packet
-    tx_md.end_of_burst = true;
-    tx_stream->send("", 0, tx_md);
-
+    // finished
+    std::cout << std::endl << "Done!" << std::endl << std::endl;
     return EXIT_SUCCESS;
 }
