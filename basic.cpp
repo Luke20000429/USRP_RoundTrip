@@ -3177,22 +3177,24 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     while (not stop_signal_called)
     {
         /* rx signal */
-        size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
         t1 = NOW();
+        size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout, true);
+        t2 = NOW();
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
         if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8 || !(i%40000000)) {
             tx_md.start_of_burst = true;
-            t2 = NOW();
+            t3 = NOW();
             for (size_t i=0; i < 1000; ++i) { 
                 tx_stream->send(tx_buffs, tx_buff.size(), tx_md);
                 tx_md.start_of_burst = false;
             }
             tx_md.end_of_burst = true;
             tx_stream->send("", 0, tx_md);
-            std::cout << "Reaction interval: " << to_nsec(t2-t1, freq_ghz) << "ns\n";
+            std::cout << "Reaction interval: " << to_nsec(t3-t2, freq_ghz) << "ns\n"
+                    << "Rx time: " << to_nsec(t2-t1, freq_ghz) << "ns\n";
         }
-        timeout             = 0.1f; // small timeout for subsequent recv
+        timeout             = 0; // small timeout for subsequent recv
         ++i;
     }
     
