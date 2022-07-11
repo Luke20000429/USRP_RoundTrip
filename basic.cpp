@@ -121,7 +121,7 @@ void transmit_worker(std::vector<std::complex<float>> buff,
     while (not stop_signal_called) {
         // send the entire contents of the buffer
         metadata.start_of_burst = true;
-        for (size_t i=0; i < 10000; ++i) {
+        for (size_t i=0; i < 10000; ++i) { // spb = 1370
             tx_streamer->send(buffs, buff.size(), metadata);
             metadata.start_of_burst = false;
         }
@@ -266,7 +266,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(102400), "samples per buffer, 0 for default")
+        ("spb", po::value<size_t>(&spb)->default_value(1370), "samples per buffer, 0 for default")
         ("tx-rate", po::value<double>(&tx_rate)->default_value(double(40.0e6)), "rate of transmit outgoing samples")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(40.0e6)), "rate of receive incoming samples")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz")
