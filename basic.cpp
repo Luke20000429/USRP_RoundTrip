@@ -99,24 +99,6 @@ void sig_int_handler(int)
     stop_signal_called = true;
 }
 
-/***********************************************************************
- * Utilities
- **********************************************************************/
-//! Change to filename, e.g. from usrp_samples.dat to usrp_samples.00.dat,
-//  but only if multiple names are to be generated.
-std::string generate_out_filename(
-    const std::string& base_fn, size_t n_names, size_t this_name)
-{
-    if (n_names == 1) {
-        return base_fn;
-    }
-
-    boost::filesystem::path base_fn_fp(base_fn);
-    // base_fn_fp.replace_extension(boost::filesystem::path(
-    //     str(boost::format("%02d%s") % this_name % base_fn_fp.extension().string())));
-    return base_fn_fp.string();
-}
-
 
 /***********************************************************************
  * transmit_worker function
@@ -138,10 +120,15 @@ void transmit_worker(std::vector<std::complex<float>> buff,
     // send data until the signal handler gets called
     while (not stop_signal_called) {
         // send the entire contents of the buffer
-        tx_streamer->send(buffs, buff.size(), metadata);
-
-        metadata.start_of_burst = false;
-        metadata.has_time_spec  = false;
+        metadata.start_of_burst = true;
+        for (size_t i=0; i < 10000; ++i) {
+            tx_streamer->send(buffs, buff.size(), metadata);
+            metadata.start_of_burst = false;
+        }
+        metadata.has_time_spec = false;
+        metadata.end_of_burst = true;
+        tx_streamer->send("", 0, metadata);
+        sleep(1);
     }
 
     // send a mini EOB packet
@@ -163,6 +150,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     double settling_time,
     std::vector<size_t> rx_channel_nums)
 {
+    samps_per_buff = 16;
     int num_total_samps = 0;
     // create a receive streamer
     uhd::stream_args_t stream_args(cpu_format, wire_format);
@@ -179,17 +167,17 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
         buff_ptrs.push_back(&buffs[i].front());
     }
 
-    // Create one ofstream object per channel
-    // (use shared_ptr because ofstream is non-copyable)
-    std::vector<std::shared_ptr<std::ofstream>> outfiles;
-    for (size_t i = 0; i < buffs.size(); i++) {
-        const std::string this_filename = generate_out_filename(file, buffs.size(), i);
-        std::cout << "Witting to the file " << this_filename << std::endl;
-        outfiles.push_back(std::shared_ptr<std::ofstream>(
-            new std::ofstream(this_filename.c_str(), std::ofstream::binary)));
-    }
-    UHD_ASSERT_THROW(outfiles.size() == buffs.size());
-    UHD_ASSERT_THROW(buffs.size() == rx_channel_nums.size());
+    // // Create one ofstream object per channel
+    // // (use shared_ptr because ofstream is non-copyable)
+    // std::vector<std::shared_ptr<std::ofstream>> outfiles;
+    // for (size_t i = 0; i < buffs.size(); i++) {
+    //     const std::string this_filename = generate_out_filename(file, buffs.size(), i);
+    //     std::cout << "Witting to the file " << this_filename << std::endl;
+    //     outfiles.push_back(std::shared_ptr<std::ofstream>(
+    //         new std::ofstream(this_filename.c_str(), std::ofstream::binary)));
+    // }
+    // UHD_ASSERT_THROW(outfiles.size() == buffs.size());
+    // UHD_ASSERT_THROW(buffs.size() == rx_channel_nums.size());
     bool overflow_message = true;
     // We increase the first timeout to cover for the delay between now + the
     // command time, plus 500ms of buffer. In the loop, we will then reduce the
@@ -234,20 +222,20 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
         num_total_samps += num_rx_samps;
 
-        for (size_t i = 0; i < outfiles.size(); i++) {
-            outfiles[i]->write(
-                (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
-        }
+        // for (size_t i = 0; i < outfiles.size(); i++) {
+        //     outfiles[i]->write(
+        //         (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
+        // }
     }
 
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
 
-    // Close files
-    for (size_t i = 0; i < outfiles.size(); i++) {
-        outfiles[i]->close();
-    }
+    // // Close files
+    // for (size_t i = 0; i < outfiles.size(); i++) {
+    //     outfiles[i]->close();
+    // }
 }
 
 
@@ -278,9 +266,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(0), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples")
-        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples")
+        ("spb", po::value<size_t>(&spb)->default_value(102400), "samples per buffer, 0 for default")
+        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(40.0e6)), "rate of transmit outgoing samples")
+        ("rx-rate", po::value<double>(&rx_rate)->default_value(double(40.0e6)), "rate of receive incoming samples")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz")
         ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz")
         ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
@@ -290,8 +278,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(40.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(40.0e6)), "analog receive filter bandwidth in Hz")
         ("wave-type", po::value<std::string>(&wave_type)->default_value("CONST"), "waveform type (CONST, SQUARE, RAMP, SINE)")
         ("wave-freq", po::value<double>(&wave_freq)->default_value(0), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
