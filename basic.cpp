@@ -3062,8 +3062,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     uhd::tx_metadata_t tx_md;
     tx_md.start_of_burst = true;
     tx_md.end_of_burst   = false;
-    tx_md.has_time_spec  = true;
-    tx_md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
+    tx_md.has_time_spec  = false;
+    // tx_md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
 
     // Check Ref and LO Lock detect
     std::vector<std::string> tx_sensor_names, rx_sensor_names;
@@ -3139,8 +3139,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         buff_ptrs.push_back(&rx_buffs[i].front());
     }
 
-    
-
     // NOTE: init tx_buffs
     int seqlen = 137;
     std::vector<std::complex<float>> tx_buff(seqlen*100);
@@ -3174,10 +3172,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     std::cout << "Samples per buff: " << spb << std::endl;
 
-    tx_stream->send(tx_buffs, seqlen*100, tx_md);
-    tx_md.start_of_burst = false;
-    tx_md.has_time_spec  = false;
-
     while (not stop_signal_called)
     {
         /* rx signal */
@@ -3186,31 +3180,22 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
         if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
-            break;
+            tx_md.start_of_burst = true;
+            t2 = NOW();
+            for (size_t i=0; i < 1000; ++i) {
+                tx_stream->send(tx_buffs, tx_buff.size(), tx_md);
+                tx_md.start_of_burst = false;
+            }
+            tx_md.end_of_burst = true;
+            tx_stream->send("", 0, tx_md);
+            std::cout << "Reaction interval: " << to_nsec(t2-t1, freq_ghz) << "ns\n";
         }
         timeout             = 0.1f; // small timeout for subsequent recv
-
     }
-
-    t2 = NOW();
-    tx_stream->send(tx_buffs, seqlen*100, tx_md);
-    t3 = NOW();
-
-    while (not stop_signal_called) {
-        /* tx signal */
-        // t3 = NOW();
-        tx_stream->send(tx_buffs, seqlen*100, tx_md);
-    }
-    std::cout << "Reaction interval: " << to_nsec(t2-t1, freq_ghz) << "ns\n"
-            << to_nsec(t3-t2, freq_ghz) << "ns\n";
     
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
-
-    // transimitter send a mini EOB packet
-    tx_md.end_of_burst = true;
-    tx_stream->send("", 0, tx_md);
 
     return EXIT_SUCCESS;
 }
