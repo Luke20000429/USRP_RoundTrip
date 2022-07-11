@@ -26,12 +26,12 @@
 #include <functional>
 #include <iostream>
 #include <thread>
-#include <chrono>
+#include "basic.hpp"
 
 namespace po = boost::program_options;
 
-#define NOW() (std::chrono::high_resolution_clock::now())
-using timestamp_t = std::chrono::high_resolution_clock::time_point;
+#define NOW() (rdtsc())
+using timestamp_t = size_t;
 
 float zc_real[] = {1.000000000000000000e+00, 
 9.905496935471658215e-01, 
@@ -2787,6 +2787,11 @@ void sig_int_handler(int)
 
 int UHD_SAFE_MAIN(int argc, char* argv[])
 {
+
+    double freq_ghz = measure_rdtsc_freq();
+
+    std::cout << "freq_ghz: " << freq_ghz << std::endl;
+
     // transmit variables to be set by po
     std::string tx_args, wave_type, tx_ant, tx_subdev, ref, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
@@ -3196,8 +3201,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         // t3 = NOW();
         tx_stream->send(tx_buffs, seqlen*100, tx_md);
     }
-    std::cout << "Reaction interval: " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-            << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n";
+    std::cout << "Reaction interval: " << to_nsec(t2-t1, freq_ghz) << "ns\n"
+            << to_nsec(t3-t2, freq_ghz) << "ns\n";
+    
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
