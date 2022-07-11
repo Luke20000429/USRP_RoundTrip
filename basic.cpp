@@ -26,12 +26,12 @@
 #include <functional>
 #include <iostream>
 #include <thread>
-#include <chrono>
+#include "basic.hpp"
 
 namespace po = boost::program_options;
 
-#define NOW() (std::chrono::high_resolution_clock::now())
-using timestamp_t = std::chrono::high_resolution_clock::time_point;
+#define NOW() (rdtsc())
+using timestamp_t = size_t;
 
 /***********************************************************************
  * Signal handlers
@@ -45,6 +45,11 @@ void sig_int_handler(int)
 
 int UHD_SAFE_MAIN(int argc, char* argv[])
 {
+
+    double freq_ghz = measure_rdtsc_freq();
+
+    std::cout << "freq_ghz: " << freq_ghz << std::endl;
+
     // transmit variables to be set by po
     std::string tx_args, wave_type, tx_ant, tx_subdev, ref, otw, tx_channels;
     double tx_rate, tx_freq, tx_gain, wave_freq, tx_bw;
@@ -455,10 +460,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     std::cout << "Time: \n"
-            << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-            << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-            << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-            << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
+            << "rx time " << to_nsec(t2-t1, freq_ghz) << "ns\n"
+            << "error handle time " << to_nsec(t3-t2, freq_ghz) << "ns\n"
+            << "tx time " << to_nsec(t4-t3, freq_ghz) << "ns\n"
+            << "cycle time " << to_nsec(t4-t1, freq_ghz) << "ns\n";
     
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
