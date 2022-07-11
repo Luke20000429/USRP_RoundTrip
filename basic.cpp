@@ -2826,8 +2826,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(20.0e6)), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(20.0e6)), "analog receive filter bandwidth in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(38.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(38.0e6)), "analog receive filter bandwidth in Hz")
         // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
         // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
@@ -3140,13 +3140,13 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     // NOTE: init tx_buffs
-    int seqlen = 137;
-    std::vector<std::complex<float>> tx_buff(seqlen*100);
+    int seqlen = 1370;
+    std::vector<std::complex<float>> tx_buff(seqlen);
     for (size_t i = 0; i < tx_buff.size(); i++) {
         // compute ZC sequence
-        tx_buff[i].real(zc_real[i%(seqlen*10)]);
-        tx_buff[i].imag(zc_imag[i%(seqlen*10)]);
-        std::cout << tx_buff[i] << "\n";
+        tx_buff[i].real(zc_real[i%(seqlen)]);
+        tx_buff[i].imag(zc_imag[i%(seqlen)]);
+        // std::cout << tx_buff[i] << "\n";
     }
     std::vector<std::complex<float>*> tx_buffs(num_channels, &tx_buff.front());
     
@@ -3172,6 +3172,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     std::cout << "Samples per buff: " << spb << std::endl;
 
+    int i = 0;
+
     while (not stop_signal_called)
     {
         /* rx signal */
@@ -3179,10 +3181,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         t1 = NOW();
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
-        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
+        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8 || !(i%40000000)) {
             tx_md.start_of_burst = true;
             t2 = NOW();
-            for (size_t i=0; i < 1000; ++i) {
+            for (size_t i=0; i < 1000; ++i) { 
                 tx_stream->send(tx_buffs, tx_buff.size(), tx_md);
                 tx_md.start_of_burst = false;
             }
@@ -3191,6 +3193,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             std::cout << "Reaction interval: " << to_nsec(t2-t1, freq_ghz) << "ns\n";
         }
         timeout             = 0.1f; // small timeout for subsequent recv
+        ++i;
     }
     
     // Shut down receiver
