@@ -67,7 +67,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(64), "samples per buffer, 0 for default")
+        ("spb", po::value<size_t>(&spb)->default_value(12800), "samples per buffer, 0 for default")
         ("tx-rate", po::value<double>(&tx_rate)->default_value(double(20.0e6)), "rate of transmit outgoing samples, 20MHz by default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(20.0e6)), "rate of receive incoming samples, 20MHz by default")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
@@ -409,13 +409,14 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     rx_stream->issue_stream_cmd(stream_cmd);
 
     std::cout << "Samples per buff: " << spb << std::endl;
+    timestamp_t t1, t2, t3, t4;
 
     while (not stop_signal_called)
     {
         /* rx signal */
-        timestamp_t t1 = NOW();
+        t1 = NOW();
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
-        timestamp_t t2 = NOW();
+        t2 = NOW();
         timeout             = 0.1f; // small timeout for subsequent recv
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
@@ -444,20 +445,20 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         // }
 
         /* tx signal */
-        timestamp_t t3 = NOW();
-        size_t num_tx_samps = tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
-        timestamp_t t4 = NOW();
+        t3 = NOW();
+        tx_stream->send(buff_ptrs, num_rx_samps, tx_md);
+        t4 = NOW();
 
         tx_md.start_of_burst = false;
         tx_md.has_time_spec  = false;
 
-        // std::cout << "Time: \n"
-        //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-        //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-        //           << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-        //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
-
     }
+
+    std::cout << "Time: \n"
+            << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
+            << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
+            << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
+            << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
     
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
