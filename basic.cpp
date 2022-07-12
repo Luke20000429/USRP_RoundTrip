@@ -72,7 +72,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("type", po::value<std::string>(&type)->default_value("short"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
-        ("spb", po::value<size_t>(&spb)->default_value(8), "samples per buffer, 0 for default")
+        ("spb", po::value<size_t>(&spb)->default_value(0), "samples per buffer, 0 for default")
         ("tx-rate", po::value<double>(&tx_rate)->default_value(double(40.0e6)), "rate of transmit outgoing samples, 20MHz by default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(40.0e6)), "rate of receive incoming samples, 20MHz by default")
         ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.0e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
@@ -312,7 +312,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // allocate a buffer which we re-use for each channel
     // check samples per buffer, NOTE: default spb is max_spb
     if (spb == 0)
-        spb = tx_stream->get_max_num_samps() * 10;
+        spb = rx_stream->get_max_num_samps();
     std::vector<std::complex<float>> buff(spb); 
     int num_channels = tx_channel_nums.size();
 
