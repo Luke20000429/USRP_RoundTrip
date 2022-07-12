@@ -2817,8 +2817,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("spb", po::value<size_t>(&spb)->default_value(8), "samples per buffer, 0 for default")
         ("tx-rate", po::value<double>(&tx_rate)->default_value(double(40.0e6)), "rate of transmit outgoing samples, 20MHz by default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(40.0e6)), "rate of receive incoming samples, 20MHz by default")
-        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.45e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(5.0e9)), "receive RF center frequency in Hz, 5GHz by default")
+        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.0e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(4.5e9)), "receive RF center frequency in Hz, 5GHz by default")
         // ("ampl", po::value<float>(&ampl)->default_value(float(0.3)), "amplitude of the waveform [0 to 0.7]")
         ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
         ("rx-gain", po::value<double>(&rx_gain)->default_value(double(40.0)), "gain for the receive RF chain, 40dB by default")
@@ -2826,8 +2826,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(38.0e6)), "analog transmit filter bandwidth in Hz")
-        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(38.0e6)), "analog receive filter bandwidth in Hz")
+        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(20.0e6)), "analog transmit filter bandwidth in Hz")
+        ("rx-bw", po::value<double>(&rx_bw)->default_value(double(20.0e6)), "analog receive filter bandwidth in Hz")
         // ("wave-type", po::value<std::string>(&wave_type)->default_value("SINE"), "waveform type (CONST, SQUARE, RAMP, SINE)")
         // ("wave-freq", po::value<double>(&wave_freq)->default_value(1000), "waveform frequency in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
@@ -3182,10 +3182,10 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         t2 = NOW();
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
-        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8 || !(i%40000000)) {
+        if (std::abs(rx_buffs[0][num_rx_samps-1]) > 0.8) {
             tx_md.start_of_burst = true;
             t3 = NOW();
-            for (size_t i=0; i < 1000; ++i) { 
+            for (size_t i=0; i < 10000; ++i) { 
                 tx_stream->send(tx_buffs, tx_buff.size(), tx_md);
                 tx_md.start_of_burst = false;
             }
@@ -3193,14 +3193,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             tx_stream->send("", 0, tx_md);
             std::cout << "Reaction interval: " << to_nsec(t3-t2, freq_ghz) << "ns\n"
                     << "Rx time: " << to_nsec(t2-t1, freq_ghz) << "ns\n";
-        }
+        } 
         timeout             = 0; // small timeout for subsequent recv
-        ++i;
+        // ++i;
     }
     
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
     rx_stream->issue_stream_cmd(stream_cmd);
+    // std::cout << ss.str() << std::endl;
 
     return EXIT_SUCCESS;
 }
