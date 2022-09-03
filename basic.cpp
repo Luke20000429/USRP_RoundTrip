@@ -257,6 +257,14 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     }
 
     for (size_t ch = 0; ch < rx_channel_nums.size(); ch++) {
+        auto ants = rx_usrp->get_rx_antennas(ch);
+        std::cout << "Valid antennas of RX channel " << ch << ":" << "\n";  
+        for (auto ant : ants) {
+            std::cout << ant << "\n";
+        }
+    }
+
+    for (size_t ch = 0; ch < rx_channel_nums.size(); ch++) {
         size_t channel = rx_channel_nums[ch];
         if (rx_channel_nums.size() > 1) {
             std::cout << "Configuring RX Channel " << channel << std::endl;
