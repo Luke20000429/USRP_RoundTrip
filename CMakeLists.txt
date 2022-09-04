@@ -47,7 +47,7 @@ link_directories(${Boost_LIBRARY_DIRS})
 
 ### Make the executable #######################################################
 set(EXE basic)
-set(SRC basic.cpp)
+set(SRC multiRX.cpp)
 add_executable(${EXE} ${SRC})
 
 set(CMAKE_BUILD_TYPE "Release")

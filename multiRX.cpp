@@ -44,36 +44,11 @@ void sig_int_handler(int)
     stop_signal_called = true;
 }
 
-/***********************************************************************
- * transmit_worker function
- * A function to be used in a thread for transmitting
- **********************************************************************/
-std::atomic_bool on;
-
-void transmit_worker(std::vector<std::complex<float>*> &buffs,
-    uhd::tx_streamer::sptr tx_streamer,
-    uhd::tx_metadata_t metadata,
-    size_t samples_per_buff,
-    int num_channels)
-{
-    // send data until the signal handler gets called
-    while (not stop_signal_called) {
-        // check control signal
-        while (not on && not stop_signal_called) {}
-
-        // send the entire contents of the buffer
-        tx_streamer->send(buffs, samples_per_buff, metadata);
-
-        metadata.start_of_burst = false;
-        metadata.has_time_spec  = false;
-    }
-
-    // send a mini EOB packet
-    metadata.end_of_burst = true;
-    tx_streamer->send("", 0, metadata);
-}
-
-
+std::vector<std::vector<int>> ant_setting
+    {
+        {1, 1, 0, 0},
+        {1, 0, 1, 0}
+    };
 
 int UHD_SAFE_MAIN(int argc, char* argv[])
 {
@@ -153,19 +128,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     if (vm.count("rx-subdev"))
         rx_usrp->set_rx_subdev_spec(rx_subdev);
 
-    // detect which channels to use
-    std::vector<std::string> tx_channel_strings;
-    std::vector<size_t> tx_channel_nums;
-    if (tx_channels != "") {
-        boost::split(tx_channel_strings, tx_channels, boost::is_any_of("\"',"));
-        for (size_t ch = 0; ch < tx_channel_strings.size(); ch++) {
-            size_t chan = std::stoi(tx_channel_strings[ch]);
-            if (chan >= tx_usrp->get_tx_num_channels()) {
-                throw std::runtime_error("Invalid TX channel(s) specified.");
-            } else
-                tx_channel_nums.push_back(std::stoi(tx_channel_strings[ch]));
-        }
-    }
     std::vector<std::string> rx_channel_strings;
     std::vector<size_t> rx_channel_nums;
     boost::split(rx_channel_strings, rx_channels, boost::is_any_of("\"',"));
@@ -179,26 +141,11 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     // Lock mboard clocks
     if (vm.count("ref")) {
-        tx_usrp->set_clock_source(ref);
         rx_usrp->set_clock_source(ref);
     }
 
     std::cout << "Using TX Device: " << tx_usrp->get_pp_string() << std::endl;
     std::cout << "Using RX Device: " << rx_usrp->get_pp_string() << std::endl;
-
-    // set the transmit sample rate
-    if (not vm.count("tx-rate")) {
-        std::cerr << "Please specify the transmit sample rate with --tx-rate"
-                  << std::endl;
-        return ~0;
-    }
-    std::cout << boost::format("Setting TX Rate: %f Msps...") % (tx_rate / 1e6)
-              << std::endl;
-    tx_usrp->set_tx_rate(tx_rate);
-    std::cout << boost::format("Actual TX Rate: %f Msps...")
-                     % (tx_usrp->get_tx_rate() / 1e6)
-              << std::endl
-              << std::endl;
 
     // set the receive sample rate
     if (not vm.count("rx-rate")) {
@@ -213,60 +160,12 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
               << std::endl
               << std::endl;
 
-    // set the transmit center frequency
-    if (not vm.count("tx-freq")) {
-        std::cerr << "Please specify the transmit center frequency with --tx-freq"
-                  << std::endl;
-        return ~0;
-    }
-
-    for (size_t ch = 0; ch < tx_channel_nums.size(); ch++) {
-        size_t channel = tx_channel_nums[ch];
-        if (tx_channel_nums.size() > 1) {
-            std::cout << "Configuring TX Channel " << channel << std::endl;
-        }
-        std::cout << boost::format("Setting TX Freq: %f MHz...") % (tx_freq / 1e6)
-                  << std::endl;
-        uhd::tune_request_t tx_tune_request(tx_freq);
-        if (vm.count("tx-int-n"))
-            tx_tune_request.args = uhd::device_addr_t("mode_n=integer");
-        tx_usrp->set_tx_freq(tx_tune_request, channel);
-        std::cout << boost::format("Actual TX Freq: %f MHz...")
-                         % (tx_usrp->get_tx_freq(channel) / 1e6)
-                  << std::endl
-                  << std::endl;
-
-        // set the rf gain
-        if (vm.count("tx-gain")) {
-            std::cout << boost::format("Setting TX Gain: %f dB...") % tx_gain
-                      << std::endl;
-            tx_usrp->set_tx_gain(tx_gain, channel);
-            std::cout << boost::format("Actual TX Gain: %f dB...")
-                             % tx_usrp->get_tx_gain(channel)
-                      << std::endl
-                      << std::endl;
-        }
-
-        // set the analog frontend filter bandwidth
-        if (vm.count("tx-bw")) {
-            std::cout << boost::format("Setting TX Bandwidth: %f MHz...") % tx_bw
-                      << std::endl;
-            tx_usrp->set_tx_bandwidth(tx_bw, channel);
-            std::cout << boost::format("Actual TX Bandwidth: %f MHz...")
-                             % tx_usrp->get_tx_bandwidth(channel)
-                      << std::endl
-                      << std::endl;
-        }
-
-        // set the antenna
-        if (vm.count("tx-ant"))
-            tx_usrp->set_tx_antenna(tx_ant, channel);
-    }
-
+    // NOTE: get available antennas
+    std::vector<std::string> antennas;
     for (size_t ch = 0; ch < rx_channel_nums.size(); ch++) {
-        auto ants = rx_usrp->get_rx_antennas(ch);
+        antennas = rx_usrp->get_rx_antennas(ch);
         std::cout << "Valid antennas of RX channel " << ch << ":" << "\n";  
-        for (auto ant : ants) {
+        for (auto ant : antennas) {
             std::cout << ant << "\n";
         }
     }
@@ -317,9 +216,9 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
                       << std::endl;
         }
 
-        // set the receive antenna
-        if (vm.count("rx-ant"))
-            rx_usrp->set_rx_antenna(rx_ant, channel);
+        // // set the receive antenna
+        // if (vm.count("rx-ant"))
+        //     rx_usrp->set_rx_antenna(rx_ant, channel);
     }
 
     // Align times in the RX USRP (the TX USRP does not require time-syncing)
@@ -327,53 +226,19 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         rx_usrp->set_time_unknown_pps(uhd::time_spec_t(0.0));
     }
 
-    // for the const wave, set the wave freq for small samples per period
-    if (wave_freq == 0 and wave_type == "CONST") {
-        wave_freq = tx_usrp->get_tx_rate() / 2;
-    }
-
-    // error when the waveform is not possible to generate
-    if (std::abs(wave_freq) > tx_usrp->get_tx_rate() / 2) {
-        throw std::runtime_error("wave freq out of Nyquist zone");
-    }
-
     // pre-compute the waveform values
     size_t index      = 0;
 
-    // create a transmit streamer
     // linearly map channels (index0 = channel0, index1 = channel1, ...)
     uhd::stream_args_t stream_args("fc32", otw);
-    stream_args.channels             = tx_channel_nums;
-    uhd::tx_streamer::sptr tx_stream = tx_usrp->get_tx_stream(stream_args);
-
     // create a receive streamer
     stream_args.channels             = rx_channel_nums;
     uhd::rx_streamer::sptr rx_stream = rx_usrp->get_rx_stream(stream_args);
 
-    // allocate a buffer which we re-use for each channel
-    // check samples per buffer, NOTE: default spb is max_spb
-    if (spb == 0)
-        spb = tx_stream->get_max_num_samps() * 10;
     std::vector<std::complex<float>> buff(spb); 
-    int num_channels = tx_channel_nums.size();
-
-    // setup the metadata flags
-    uhd::tx_metadata_t tx_md;
-    tx_md.start_of_burst = true;
-    tx_md.end_of_burst   = false;
-    tx_md.has_time_spec  = true;
-    tx_md.time_spec = uhd::time_spec_t(0.5); // give us 0.5 seconds to fill the tx buffers
 
     // Check Ref and LO Lock detect
-    std::vector<std::string> tx_sensor_names, rx_sensor_names;
-    tx_sensor_names = tx_usrp->get_tx_sensor_names(0);
-    if (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "lo_locked")
-        != tx_sensor_names.end()) {
-        uhd::sensor_value_t lo_locked = tx_usrp->get_tx_sensor("lo_locked", 0);
-        std::cout << boost::format("Checking TX: %s ...") % lo_locked.to_pp_string()
-                  << std::endl;
-        UHD_ASSERT_THROW(lo_locked.to_bool());
-    }
+    std::vector<std::string> rx_sensor_names;
     rx_sensor_names = rx_usrp->get_rx_sensor_names(0);
     if (std::find(rx_sensor_names.begin(), rx_sensor_names.end(), "lo_locked")
         != rx_sensor_names.end()) {
@@ -381,24 +246,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         std::cout << boost::format("Checking RX: %s ...") % lo_locked.to_pp_string()
                   << std::endl;
         UHD_ASSERT_THROW(lo_locked.to_bool());
-    }
-
-    tx_sensor_names = tx_usrp->get_mboard_sensor_names(0);
-    if ((ref == "mimo")
-        and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "mimo_locked")
-             != tx_sensor_names.end())) {
-        uhd::sensor_value_t mimo_locked = tx_usrp->get_mboard_sensor("mimo_locked", 0);
-        std::cout << boost::format("Checking TX: %s ...") % mimo_locked.to_pp_string()
-                  << std::endl;
-        UHD_ASSERT_THROW(mimo_locked.to_bool());
-    }
-    if ((ref == "external")
-        and (std::find(tx_sensor_names.begin(), tx_sensor_names.end(), "ref_locked")
-             != tx_sensor_names.end())) {
-        uhd::sensor_value_t ref_locked = tx_usrp->get_mboard_sensor("ref_locked", 0);
-        std::cout << boost::format("Checking TX: %s ...") % ref_locked.to_pp_string()
-                  << std::endl;
-        UHD_ASSERT_THROW(ref_locked.to_bool());
     }
 
     rx_sensor_names = rx_usrp->get_mboard_sensor_names(0);
@@ -423,10 +270,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         std::signal(SIGINT, &sig_int_handler);
         std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
     }
-
-    // reset usrp time to prepare for transmit/receive
-    std::cout << boost::format("Setting device timestamp to 0...") << std::endl;
-    tx_usrp->set_time_now(uhd::time_spec_t(0.0));
 
     // init buffs
     std::vector<std::vector<std::complex<float>>> buffs(
@@ -456,17 +299,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
     rx_stream->issue_stream_cmd(stream_cmd);
 
-    std::thread transmit_thread([&]() {
-        transmit_worker(buff_ptrs, tx_stream, tx_md, spb, num_channels);
-    });
     std::cout << "Samples per buff: " << spb << std::endl;
+    timestamp_t t1 = NOW();
+    size_t toggle_counter = 0;
 
     while (not stop_signal_called)
     {
         /* rx signal */
-        timestamp_t t1 = NOW();
+        
         size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
-        timestamp_t t2 = NOW();
         timeout             = 0.1f; // small timeout for subsequent recv
 
         // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
@@ -494,25 +335,16 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
             throw std::runtime_error("Receiver error " + rx_md.strerror());
         }
 
-        // for (auto sample : buffs[0]) {
-        //     if (std::abs(sample) > 0.8) {
-        //         std::cout << "Mag of recv signal " << std::abs(sample) << std::endl;
-        //     }
-        // }
-
         // toggle flag
-        if (std::abs(buffs[0][num_rx_samps-1]) >= 0.9) {
-            bool status = on.load();
-            on.store(!status);
-            std::cout << "Status toggled -> " << !status << std::endl;
+        if (to_sec(NOW() - t1, freq_ghz) > 2) {
+            for (size_t ch=0; ch < rx_channel_nums.size(); ++ch) {
+                auto ant_id = ant_setting[ch][toggle_counter];
+                rx_usrp->set_rx_antenna(antennas[ant_id], ch);
+                std::cout << "Channel: " << ch << " using ant: " << antennas[ant_id] << "\n";
+            }
+            toggle_counter = (toggle_counter+1) % 4;
+            t1 = NOW();
         }
-
-        // std::cout << "Time: \n"
-        //           << "rx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t2-t1).count() << "ns\n"
-        //           << "error handle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t3-t2).count() << "ns\n"
-        //           << "tx time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t3).count() << "ns\n"
-        //           << "cycle time " << std::chrono::duration_cast<std::chrono::nanoseconds>(t4-t1).count() << "ns\n";
-
     }
     
     // Shut down receiver
@@ -521,7 +353,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     // clean up transmit worker
     stop_signal_called = true;
-    transmit_thread.join();
 
     return EXIT_SUCCESS;
 }
