@@ -33,8 +33,18 @@
 namespace po = boost::program_options;
 
 #define NOW() (rdtsc())
-#define BATCH_SIZE 409600
+#define BATCH_SIZE 99200
+#define BATCH_ITER 16
 using timestamp_t = size_t;
+
+/***********************************************************************
+ * Variables
+ **********************************************************************/
+const std::vector<std::vector<int>> ant_setting
+    {
+        {1, 0, 0, 1},
+        {1, 0, 1, 0}
+    };
 
 /***********************************************************************
  * Signal handlers
@@ -44,12 +54,6 @@ void sig_int_handler(int)
 {
     stop_signal_called = true;
 }
-
-std::vector<std::vector<int>> ant_setting
-    {
-        {1, 1, 0, 0},
-        {1, 0, 1, 0}
-    };
 
 /***********************************************************************
  * Utilities
@@ -83,6 +87,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 {
     int num_total_samps = 0;
     size_t toggle_counter = 0;
+    size_t total_samples_rcv = 0;
     // create a receive streamer
     uhd::stream_args_t stream_args(cpu_format, wire_format);
     stream_args.channels             = rx_channel_nums;
@@ -163,24 +168,25 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
 
         num_total_samps += num_rx_samps;
         // toggle flag
-        if (num_total_samps > BATCH_SIZE) {
-            std::cout << "total received samples: " << num_total_samps << "\n";
+        if (num_total_samps >= BATCH_SIZE) {
+            size_t toggle_index = toggle_counter % 4;
+            std::cout << "toggle #" << toggle_counter++ << "\n"; 
             for (size_t ch=0; ch < rx_channel_nums.size(); ++ch) {
-                auto ant_id = ant_setting[ch][toggle_counter];
+                auto ant_id = ant_setting[ch][toggle_index];
                 usrp->set_rx_antenna(antennas[ant_id], ch);
                 std::cout << "Channel: " << ch << " using ant: " << antennas[ant_id] << "\n";
             }
-            toggle_counter = (toggle_counter+1) % 4;
             num_rx_samps -= (num_total_samps - BATCH_SIZE);
             num_total_samps = 0;
         }
 
         for (size_t i = 0; i < outfiles.size(); i++) {
+            total_samples_rcv += num_rx_samps;
             outfiles[i]->write(
                 (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
         }
 
-        
+        // if (toggle_counter >= BATCH_ITER) break;
     }
 
     // Shut down receiver
@@ -191,6 +197,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
     for (size_t i = 0; i < outfiles.size(); i++) {
         outfiles[i]->close();
     }
+    std::cout << "************** total received samples: " << total_samples_rcv/2 << " **************\n";
 }
 
 int UHD_SAFE_MAIN(int argc, char* argv[])
@@ -215,30 +222,21 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // clang-format off
     desc.add_options()
         ("help", "help message")
-        ("tx-args", po::value<std::string>(&tx_args)->default_value(""), "uhd transmit device address args")
         ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
-        ("file", po::value<std::string>(&file)->default_value("/home/liuxs/workarea/uhd_control/Log/usrp_samples"), "name of the file to write binary samples to")
+        ("file", po::value<std::string>(&file)->default_value("/home/liuxs/workarea/uhd_control/Log/usrp_samples2-"), "name of the file to write binary samples to")
         ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
         ("spb", po::value<size_t>(&spb)->default_value(1024), "samples per buffer, 0 for default")
-        ("tx-rate", po::value<double>(&tx_rate)->default_value(double(2.0e6)), "rate of transmit outgoing samples, 2MHz by default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 2MHz by default")
-        ("tx-freq", po::value<double>(&tx_freq)->default_value(double(2.38e9)), "transmit RF center frequency in Hz, 2.45GHz by default")
         ("rx-freq", po::value<double>(&rx_freq)->default_value(double(2.68e9)), "receive RF center frequency in Hz, 5GHz by default")
-        ("tx-gain", po::value<double>(&tx_gain)->default_value(double(90.0)), "gain for the transmit RF chain, 70dB by default")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(76.0)), "gain for the receive RF chain, 40dB by default")
-        ("tx-ant", po::value<std::string>(&tx_ant), "transmit antenna selection")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(20.0)), "gain for the receive RF chain, 40dB by default")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
-        ("tx-subdev", po::value<std::string>(&tx_subdev), "transmit subdevice specification")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
-        ("tx-bw", po::value<double>(&tx_bw)->default_value(double(1.0e6)), "analog transmit filter bandwidth in Hz")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
         ("ref", po::value<std::string>(&ref)->default_value("internal"), "clock reference (internal, external, mimo)")
         ("otw", po::value<std::string>(&otw)->default_value("fc32"), "specify the over-the-wire sample mode")
-        ("tx-channels", po::value<std::string>(&tx_channels)->default_value(""), "which TX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 0 by default")
         ("rx-channels", po::value<std::string>(&rx_channels)->default_value("0,1"), "which RX channel(s) to use (specify \"0\", \"1\", \"0,1\", etc), 1 by default")
-        ("tx-int-n", "tune USRP TX with integer-N tuning")
         ("rx-int-n", "tune USRP RX with integer-N tuning")
     ;
     // clang-format on
@@ -254,17 +252,11 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
 
     // create a usrp device
     std::cout << std::endl;
-    std::cout << boost::format("Creating the transmit usrp device with: %s...") % tx_args
-              << std::endl;
-    uhd::usrp::multi_usrp::sptr tx_usrp = uhd::usrp::multi_usrp::make(tx_args);
-    std::cout << std::endl;
     std::cout << boost::format("Creating the receive usrp device with: %s...") % rx_args
               << std::endl;
     uhd::usrp::multi_usrp::sptr rx_usrp = uhd::usrp::multi_usrp::make(rx_args);
 
     // always select the subdevice first, the channel mapping affects the other settings
-    if (vm.count("tx-subdev"))
-        tx_usrp->set_tx_subdev_spec(tx_subdev);
     if (vm.count("rx-subdev"))
         rx_usrp->set_rx_subdev_spec(rx_subdev);
 
@@ -284,7 +276,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         rx_usrp->set_clock_source(ref);
     }
 
-    std::cout << "Using TX Device: " << tx_usrp->get_pp_string() << std::endl;
     std::cout << "Using RX Device: " << rx_usrp->get_pp_string() << std::endl;
 
     // set the receive sample rate
@@ -327,8 +318,8 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         if (vm.count("rx-gain")) {
             std::cout << boost::format("Setting RX Gain: %f dB...") % rx_gain
                       << std::endl;
-            rx_usrp->set_normalized_rx_gain(1.0, channel);
-            // rx_usrp->set_rx_gain(rx_gain, channel);
+            // rx_usrp->set_normalized_rx_gain(1.0, channel);
+            rx_usrp->set_rx_gain(rx_gain, channel);
             std::cout << boost::format("Actual RX Gain: %f dB...")
                              % rx_usrp->get_rx_gain(channel)
                       << std::endl
@@ -421,7 +412,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
     rx_stream->issue_stream_cmd(stream_cmd);
 
-    std::cout << "Samples per buff: " << spb << std::endl;
+    std::cout << "Samples per buff: " << spb << " " << type << std::endl;
     // timestamp_t t1 = NOW();
 
     // recv to file
@@ -439,51 +430,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         stop_signal_called = true;
         throw std::runtime_error("Unknown type " + type);
     }
-    
-    // size_t toggle_counter = 0;
-    // while (not stop_signal_called)
-    // {
-    //     /* rx signal */
-        
-    //     size_t num_rx_samps = rx_stream->recv(buff_ptrs, spb, rx_md, timeout);
-    //     timeout             = 0.1f; // small timeout for subsequent recv
-
-    //     // std::cout << "Num of rcv samples: " << num_rx_samps << std::endl;
-
-    //     // error code checking
-    //     if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_TIMEOUT) {
-    //         std::cout << "Timeout while streaming" << std::endl;
-    //         break;
-    //     }
-    //     if (rx_md.error_code == uhd::rx_metadata_t::ERROR_CODE_OVERFLOW) {
-    //         if (overflow_message) {
-    //             overflow_message = false;
-    //             std::cerr
-    //                 << boost::format(
-    //                        "Got an overflow indication. Please consider the following:\n"
-    //                        "  Your write medium must sustain a rate of %fMB/s.\n"
-    //                        "  Dropped samples will not be written to the file.\n"
-    //                        "  Please modify this example for your purposes.\n"
-    //                        "  This message will not appear again.\n")
-    //                        % (rx_usrp->get_rx_rate() * sizeof(std::complex<float>) / 1e6);
-    //         }
-    //         continue;
-    //     }
-    //     if (rx_md.error_code != uhd::rx_metadata_t::ERROR_CODE_NONE) {
-    //         throw std::runtime_error("Receiver error " + rx_md.strerror());
-    //     }
-
-    //     // toggle flag
-    //     if (to_sec(NOW() - t1, freq_ghz) > 2) {
-    //         for (size_t ch=0; ch < rx_channel_nums.size(); ++ch) {
-    //             auto ant_id = ant_setting[ch][toggle_counter];
-    //             rx_usrp->set_rx_antenna(antennas[ant_id], ch);
-    //             std::cout << "Channel: " << ch << " using ant: " << antennas[ant_id] << "\n";
-    //         }
-    //         toggle_counter = (toggle_counter+1) % 4;
-    //         t1 = NOW();
-    //     }
-    // }
     
     // Shut down receiver
     stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
