@@ -33,8 +33,8 @@
 namespace po = boost::program_options;
 
 #define NOW() (rdtsc())
-#define BATCH_SIZE 99200
-#define BATCH_ITER 16
+#define BATCH_SIZE 81920
+#define BATCH_ITER 50
 using timestamp_t = size_t;
 
 /***********************************************************************
@@ -42,8 +42,8 @@ using timestamp_t = size_t;
  **********************************************************************/
 const std::vector<std::vector<int>> ant_setting
     {
-        {1, 0, 0, 1},
-        {1, 0, 1, 0}
+        {1, 1, 1, 1},
+        {0, 0, 0, 0}
     };
 
 /***********************************************************************
@@ -113,6 +113,14 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
         buff_ptrs.push_back(&buffs[i].front());
     }
 
+    std::vector<std::vector<samp_type>> garbs(
+        rx_channel_nums.size(), std::vector<samp_type>(4096));
+    // create a vector of pointers to point to each of the channel buffers
+    std::vector<samp_type*> garb_ptrs;
+    for (size_t i = 0; i < garbs.size(); i++) {
+        garb_ptrs.push_back(&garbs[i].front());
+    }
+
     // NOTE: Create one ofstream object per channel
     // (use shared_ptr because ofstream is non-copyable)
     std::vector<std::shared_ptr<std::ofstream>> outfiles;
@@ -177,6 +185,8 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
                 std::cout << "Channel: " << ch << " using ant: " << antennas[ant_id] << "\n";
             }
             num_rx_samps -= (num_total_samps - BATCH_SIZE);
+            // clean the buffer
+            size_t num_rx_samps = rx_stream->recv(garb_ptrs, 4096, md, timeout);
             num_total_samps = 0;
         }
 
@@ -186,7 +196,7 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
                 (const char*)buff_ptrs[i], num_rx_samps * sizeof(samp_type));
         }
 
-        // if (toggle_counter >= BATCH_ITER) break;
+        if (toggle_counter >= BATCH_ITER) break;
     }
 
     // Shut down receiver
@@ -229,7 +239,7 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
         ("spb", po::value<size_t>(&spb)->default_value(1024), "samples per buffer, 0 for default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 2MHz by default")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(2.68e9)), "receive RF center frequency in Hz, 5GHz by default")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(1.68e9)), "receive RF center frequency in Hz, 5GHz by default")
         ("rx-gain", po::value<double>(&rx_gain)->default_value(double(20.0)), "gain for the receive RF chain, 40dB by default")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
