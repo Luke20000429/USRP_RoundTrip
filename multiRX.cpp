@@ -42,8 +42,8 @@ using timestamp_t = size_t;
  **********************************************************************/
 const std::vector<std::vector<int>> ant_setting
     {
-        {1, 1, 1, 1},
-        {0, 0, 0, 0}
+        {1, 1, 0, 0},
+        {1, 0, 1, 0}
     };
 
 /***********************************************************************
@@ -102,6 +102,8 @@ void recv_to_file(uhd::usrp::multi_usrp::sptr usrp,
             std::cout << ant << "\n";
         }
     }
+    usrp->set_rx_antenna(antennas[ant_setting[0][0]], 0);
+    usrp->set_rx_antenna(antennas[ant_setting[1][0]], 1);
 
     // Prepare buffers for received samples and metadata
     uhd::rx_metadata_t md;
@@ -232,15 +234,15 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
     // clang-format off
     desc.add_options()
         ("help", "help message")
-        ("rx-args", po::value<std::string>(&rx_args)->default_value(""), "uhd receive device address args")
+        ("rx-args", po::value<std::string>(&rx_args)->default_value("serial = 3245CE0"), "uhd receive device address args")
         ("file", po::value<std::string>(&file)->default_value("/home/liuxs/workarea/uhd_control/Log/usrp_samples2-"), "name of the file to write binary samples to")
         ("type", po::value<std::string>(&type)->default_value("float"), "sample type in file: double, float, or short")
         ("nsamps", po::value<size_t>(&total_num_samps)->default_value(0), "total number of samples to receive")
         ("settling", po::value<double>(&settling)->default_value(double(0.2)), "settling time (seconds) before receiving")
         ("spb", po::value<size_t>(&spb)->default_value(1024), "samples per buffer, 0 for default")
         ("rx-rate", po::value<double>(&rx_rate)->default_value(double(2.0e6)), "rate of receive incoming samples, 2MHz by default")
-        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(1.68e9)), "receive RF center frequency in Hz, 5GHz by default")
-        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(20.0)), "gain for the receive RF chain, 40dB by default")
+        ("rx-freq", po::value<double>(&rx_freq)->default_value(double(1.8899e9)), "receive RF center frequency in Hz, 5GHz by default")
+        ("rx-gain", po::value<double>(&rx_gain)->default_value(double(30.0)), "gain for the receive RF chain, 40dB by default")
         ("rx-ant", po::value<std::string>(&rx_ant), "receive antenna selection")
         ("rx-subdev", po::value<std::string>(&rx_subdev), "receive subdevice specification")
         ("rx-bw", po::value<double>(&rx_bw)->default_value(double(1.0e6)), "analog receive filter bandwidth in Hz")
@@ -394,34 +396,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         std::cout << "Press Ctrl + C to stop streaming..." << std::endl;
     }
 
-    // init buffs
-    std::vector<std::vector<std::complex<float>>> buffs(
-        rx_channel_nums.size(), std::vector<std::complex<float>>(spb));
-
-    // create a vector of pointers to point to each of the channel buffers
-    std::vector<std::complex<float>*> buff_ptrs;
-    std::cout << "Actual buffers size: " << buffs.size() <<std::endl;
-    for (size_t i = 0; i < buffs.size(); i++) {
-        buff_ptrs.push_back(&buffs[i].front());
-    }
-
-    // rx_metadate
-    uhd::rx_metadata_t rx_md;
-
-    // init timeout
-    double timeout = settling + 0.5f;
-
-    bool overflow_message = true;
-
-    // setup rx_streaming
-    uhd::stream_cmd_t stream_cmd((total_num_samps == 0)
-                                     ? uhd::stream_cmd_t::STREAM_MODE_START_CONTINUOUS
-                                     : uhd::stream_cmd_t::STREAM_MODE_NUM_SAMPS_AND_DONE);
-    stream_cmd.num_samps  = total_num_samps;
-    stream_cmd.stream_now = false;
-    stream_cmd.time_spec  = rx_usrp->get_time_now() + uhd::time_spec_t(settling);
-    rx_stream->issue_stream_cmd(stream_cmd);
-
     std::cout << "Samples per buff: " << spb << " " << type << std::endl;
     // timestamp_t t1 = NOW();
 
@@ -440,10 +414,6 @@ int UHD_SAFE_MAIN(int argc, char* argv[])
         stop_signal_called = true;
         throw std::runtime_error("Unknown type " + type);
     }
-    
-    // Shut down receiver
-    stream_cmd.stream_mode = uhd::stream_cmd_t::STREAM_MODE_STOP_CONTINUOUS;
-    rx_stream->issue_stream_cmd(stream_cmd);
 
     // clean up transmit worker
     stop_signal_called = true;
